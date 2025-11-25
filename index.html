@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PG Brain — Earworms</title>
+
+  <!-- model-viewer (lightweight, mobile-friendly glTF viewer) -->
+  <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+
+  <style>
+    :root {
+      --bg:#000;
+      --accent: #00ffd6;
+      --ui-bg: rgba(0,0,0,0.45);
+      --muted: #9aa;
+    }
+    html,body { height:100%; margin:0; background:var(--bg); color:#fff; font-family:Inter,system-ui,monospace; }
+    model-viewer { width:100vw; height:100vh; --poster-color: transparent; display:block; }
+    /* minimal UI overlay */
+    #ui {
+      position:fixed; left:12px; top:12px; z-index:12;
+      background:var(--ui-bg); padding:8px 10px; border-radius:10px;
+      backdrop-filter: blur(4px);
+    }
+    #ui small { color:var(--muted); display:block; margin-top:4px; font-size:13px; }
+    /* hotspot markers (visual aid) */
+    .hotspot {
+      width:14px; height:14px; border-radius:50%;
+      background:transparent; border:2px solid rgba(255,255,255,0.12);
+      box-shadow: 0 0 10px rgba(0,255,214,0.08), inset 0 0 6px rgba(255,255,255,0.02);
+      transition: transform .15s ease, box-shadow .15s ease;
+    }
+    .hotspot:focus, .hotspot:hover { transform: scale(1.28); box-shadow:0 0 18px rgba(0,255,214,0.14); outline:none; }
+    /* small legend in corner */
+    #legend { position:fixed; right:12px; top:12px; z-index:12; background:var(--ui-bg); padding:8px 10px; border-radius:10px; color:var(--muted); font-size:13px; }
+    a.linkish { color:var(--accent); text-decoration:none; font-weight:600; }
+  </style>
+</head>
+<body>
+
+  <div id="ui">
+    <strong>PG Brain — Earworms</strong>
+    <small>Drag to rotate • Pinch to zoom • Click a worm hotspot to follow the link</small>
+  </div>
+
+  <div id="legend">
+    <div><span style="display:inline-block;width:10px;height:10px;background:#ff6b6b;margin-right:8px;border-radius:50%"></span> Worm 1 → TETANUS</div>
+    <div style="margin-top:6px;"><span style="display:inline-block;width:10px;height:10px;background:#7ad0ff;margin-right:8px;border-radius:50%"></span> Worm 2 → PG-TV</div>
+  </div>
+
+  <!-- The model. Change src if you move the file.
+       NOTE: I'm pointing at the uploaded path you provided:
+       /mnt/data/stylizedhumanbrain.glb
+       When you put this on GitHub Pages, rename/move the .glb next to index.html and change src to "brain.glb" -->
+  <model-viewer id="mv"
+      src="/mnt/data/stylizedhumanbrain.glb"
+      alt="Stylized human brain"
+      camera-controls
+      auto-rotate
+      exposure="1.1"
+      ar
+      style="background:transparent;"
+      shadow-intensity="0.9">
+
+    <!-- Hotspots: data-position = "x y z" in model coordinates (tweak if placement needs fine-tuning) -->
+    <!-- Each hotspot is an interactive button; clicking navigates to the URL set in the click handler below. -->
+    <button slot="hotspot-1" data-position="0.10 0.35 0.7" data-normal="0 1 0" class="hotspot" title="Worm 1"></button>
+    <button slot="hotspot-2" data-position="-0.45 0.05 0.75" data-normal="0 1 0" class="hotspot" title="Worm 2"></button>
+    <button slot="hotspot-3" data-position="0.42 -0.05 0.5" data-normal="0 1 0" class="hotspot" title="Worm 3"></button>
+    <button slot="hotspot-4" data-position="-0.08 -0.5 0.55" data-normal="0 1 0" class="hotspot" title="Worm 4"></button>
+    <button slot="hotspot-5" data-position="0.28 0.55 0.12" data-normal="0 1 0" class="hotspot" title="Worm 5"></button>
+    <button slot="hotspot-6" data-position="-0.6 0.28 0.05" data-normal="0 1 0" class="hotspot" title="Worm 6"></button>
+
+  </model-viewer>
+
+<script>
+  // Hotspot URLs — #1 & #2 are your links; others are placeholders
+  const HOTLINKS = [
+    'https://julesyvd-tech.github.io/TETANUS/',
+    'https://julesyvd-tech.github.io/PG-TV/',
+    'about:blank', 'about:blank', 'about:blank', 'about:blank'
+  ];
+
+  // Wire up clicks on the hotspot buttons inside model-viewer
+  const mv = document.getElementById('mv');
+
+  // model-viewer exposes DOM hotspots as slotted elements; query them
+  function wireHotspots(){
+    for (let i=1;i<=6;i++){
+      const btn = mv.querySelector(`[slot="hotspot-${i}"]`);
+      if (!btn) continue;
+      btn.style.cursor = 'pointer';
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const url = HOTLINKS[i-1] || 'about:blank';
+        if (url === 'about:blank') {
+          // placeholder behavior: alert + highlight
+          btn.animate([{ transform: 'scale(1.2)' }, { transform: 'scale(1.0)' }], { duration: 240, easing: 'ease-out' });
+          alert('Hotspot ' + i + ' not wired yet — replace placeholder with a URL when ready.');
+        } else {
+          // open in new tab
+          window.open(url, '_blank');
+        }
+      };
+      btn.addEventListener('mouseenter', ()=> btn.style.opacity = 1);
+    }
+  }
+
+  // model-viewer may lazy-init; use event when it's ready
+  mv.addEventListener('load', () => {
+    // a small delay to ensure hotspots are placed
+    setTimeout(wireHotspots, 120);
+  });
+
+  // fallback: attempt to wire immediately (for some browsers)
+  wireHotspots();
+
+  // Helpful tip: when you move to GitHub Pages, put the .glb next to this file and change:
+  // src="/mnt/data/stylizedhumanbrain.glb"  --->  src="brain.glb"
+  //
+  // Host files:
+  // - index.html
+  // - brain.glb
+  //
+  // Done.
+
+</script>
+</body>
+</html>
