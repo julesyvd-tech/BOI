@@ -3,33 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brain of Isaac</title>
+    <title>Brain of Isaac (BOI)</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Custom styles for the 3D scene */
         #scene-container {
             width: 100%;
-            height: calc(100vh - 100px); /* Fill most of the viewport height */
+            height: 100vh; /* Full viewport height */
             cursor: grab;
             touch-action: none; /* Prevent browser touch behavior on canvas */
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
         }
         body {
             font-family: 'Inter', sans-serif;
             overflow: hidden; /* Prevent body scroll */
+            margin: 0; /* Ensure no default margin */
+            padding: 0; /* Ensure no default padding */
         }
     </style>
     <!-- Three.js Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
-<body class="bg-gray-900 text-white min-h-screen">
+<body class="bg-gray-900 text-white h-screen w-screen overflow-hidden">
 
-    <div class="p-4 bg-gray-800 shadow-lg flex justify-between items-center">
-        <h1 class="text-2xl font-bold text-pink-300">BOI</h1>
-        <p class="text-sm text-gray-400 hidden sm:block">Click & Drag the model to rotate. Click a worm to follow the link.</p>
-    </div>
-
-    <!-- 3D Scene Container -->
+    <!-- 3D Scene Container (Now Full Screen) -->
     <div id="scene-container" class="relative">
         <!-- Three.js Canvas will be appended here -->
         <div id="loading-indicator" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-70 text-lg font-semibold text-pink-300 z-30">
@@ -37,11 +38,11 @@
         </div>
     </div>
 
-    <!-- Info Box -->
-    <div id="info-box" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-gray-700 p-4 rounded-lg shadow-2xl z-20 hidden">
-        <h3 class="text-lg font-semibold text-pink-300">Welcome!</h3>
-        <p class="text-sm text-gray-300 mt-1">Drag the model to rotate it. Click any worm to test the hyperlinking feature.</p>
-        <button onclick="document.getElementById('info-box').style.display = 'none';" class="mt-3 w-full bg-pink-600 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+    <!-- Info Box (Minimalist overlay, moved to bottom right) -->
+    <div id="info-box" class="absolute bottom-4 right-4 max-w-xs bg-gray-800 bg-opacity-90 p-4 rounded-lg shadow-2xl z-20 hidden border border-pink-500">
+        <h3 class="text-base font-semibold text-pink-300">BOI</h3>
+        <p class="text-xs text-gray-300 mt-1">Drag to rotate. Click the active pathway to link out.</p>
+        <button onclick="document.getElementById('info-box').style.display = 'none';" class="mt-2 w-full bg-pink-600 hover:bg-pink-700 text-white font-bold py-1 px-3 rounded-lg text-xs transition duration-200">
             Got It
         </button>
     </div>
@@ -73,18 +74,8 @@
     let previousMousePosition = { x: 0, y: 0 };
     const rotationSpeed = 0.005;
 
-    // Worm data (path and links) - SHORTENED PATHS
+    // Worm data (path and links) - ONLY THE ACTIVE LINK REMAINS
     const wormData = [
-        {
-            name: "The Neuron Nexus (Inactive)",
-            url: "#", // Placeholder/Blank URL
-            color: 0x964b00, // Brown
-            pathPoints: [
-                new THREE.Vector3(1.5, 0.8, 0.5),
-                new THREE.Vector3(2.5, 1.5, 0.8),
-                new THREE.Vector3(3.5, 2.0, 1.0), // Shortened end point
-            ],
-        },
         {
             name: "The Technical Stream Link (PG-TV)", // Active Link
             url: "https://julesyvd-tech.github.io/PG-TV/", 
@@ -93,26 +84,6 @@
                 new THREE.Vector3(-1.5, -0.5, -0.8),
                 new THREE.Vector3(-2.5, -1.0, -1.2),
                 new THREE.Vector3(-3.2, -1.8, -1.5), // Shortened end point
-            ],
-        },
-        {
-            name: "Existential Dread (Inactive)",
-            url: "#", // Placeholder/Blank URL
-            color: 0x8b4513, // Saddle Brown
-            pathPoints: [
-                new THREE.Vector3(0.5, 1.5, 0.5),
-                new THREE.Vector3(1.2, 2.2, 1.5),
-                new THREE.Vector3(1.5, 3.0, 2.0), // Shortened end point
-            ],
-        },
-        {
-            name: "Biology Junction (Inactive)",
-            url: "#", // Placeholder/Blank URL
-            color: 0xa0522d, // Sienne
-            pathPoints: [
-                new THREE.Vector3(-0.5, -1.5, -0.5),
-                new THREE.Vector3(-1.2, -2.5, -1.5),
-                new THREE.Vector3(-1.8, -3.2, -2.0), // Shortened end point
             ],
         },
     ];
@@ -125,13 +96,14 @@
 
         // 2. CAMERA
         const container = document.getElementById('scene-container');
-        const aspect = container.clientWidth / container.clientHeight;
+        // Use window dimensions for initial full screen setup
+        const aspect = window.innerWidth / window.innerHeight;
         camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
         camera.position.z = 10;
 
         // 3. RENDERER
         renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         container.appendChild(renderer.domElement);
 
@@ -412,9 +384,9 @@
     }
 
     function onWindowResize() {
-        const container = document.getElementById('scene-container');
-        const width = container.clientWidth;
-        const height = container.clientHeight;
+        // Use window inner dimensions for full screen
+        const width = window.innerWidth;
+        const height = window.innerHeight;
 
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
@@ -509,11 +481,9 @@
             intersectedObject.material.color.set(0xffffff); // Flash white
 
             setTimeout(() => {
-                // The color stored in the material has changed due to the flash, 
-                // but for this simple use case, we can keep it as is, or store the original
-                // color globally for the worm. For now, we'll just let it flash white.
-                // A better implementation would save the original color in userData.
-                // We'll leave it as is to avoid adding complex color state management.
+                // Since there is only one active link, we don't need complex color restoration.
+                // It will revert to the original blue color on the next frame of the animation loop
+                // if we were managing color state, but for this simple flash, we'll keep it.
             }, 100); 
         }
     }
@@ -522,31 +492,23 @@
 
     function showModal(name, url) {
         const modal = document.getElementById('confirmation-modal');
+        // Since we removed inactive links, the modal logic can be simpler.
         const isPlaceholder = (url === '#' || url === '');
 
-        document.getElementById('modal-title').innerText = isPlaceholder ? `Link Not Active: ${name}` : `Worm Link Activation: ${name}`;
-        document.getElementById('modal-message').innerText = isPlaceholder 
-            ? `This neural pathway is currently inactive and does not lead anywhere yet.`
-            : `This will open a new tab to: ${url}`;
+        document.getElementById('modal-title').innerText = `Worm Link Activation: ${name}`;
+        document.getElementById('modal-message').innerText = `This will open a new tab to: ${url}`;
 
         const confirmButton = document.getElementById('modal-confirm');
         const cancelButton = document.getElementById('modal-cancel');
 
-        if (isPlaceholder) {
-            confirmButton.innerText = 'Close';
-            cancelButton.style.display = 'none';
-            confirmButton.onclick = () => {
-                hideModal();
-            };
-        } else {
-            confirmButton.innerText = 'Proceed';
-            cancelButton.style.display = 'inline-block';
-            confirmButton.onclick = () => {
-                window.open(url, '_blank');
-                hideModal();
-            };
-        }
-
+        // Since only the active link remains, we assume the link is active.
+        confirmButton.innerText = 'Proceed';
+        cancelButton.style.display = 'inline-block';
+        confirmButton.onclick = () => {
+            window.open(url, '_blank');
+            hideModal();
+        };
+        
         modal.classList.remove('hidden');
         modal.classList.add('flex');
     }
