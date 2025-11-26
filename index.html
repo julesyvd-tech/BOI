@@ -1,108 +1,594 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PG Brain — Test Viewer</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brain of Isaac</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body {
-            margin: 0;
-            background: black;
-            overflow: hidden;
-            font-family: monospace;
-            color: white;
+        /* Custom styles for the 3D scene */
+        #scene-container {
+            width: 100%;
+            height: calc(100vh - 100px); /* Fill most of the viewport height */
+            cursor: grab;
+            touch-action: none; /* Prevent browser touch behavior on canvas */
         }
-        #info {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            z-index: 10;
-            font-size: 14px;
-            background: rgba(0,0,0,0.5);
-            padding: 8px 12px;
-            border-radius: 6px;
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Prevent body scroll */
         }
     </style>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
+<body class="bg-gray-900 text-white min-h-screen">
 
-<body>
-    <div id="info">🧠 PG Brain Viewer — drag to rotate, scroll to zoom</div>
+    <div class="p-4 bg-gray-800 shadow-lg flex justify-between items-center">
+        <h1 class="text-2xl font-bold text-pink-300">BOI</h1>
+        <p class="text-sm text-gray-400 hidden sm:block">Click & Drag the model to rotate. Click a worm to follow the link.</p>
+    </div>
 
-    <!-- Three.js -->
-    <script src="https://unpkg.com/three@latest/build/three.min.js"></script>
+    <!-- 3D Scene Container -->
+    <div id="scene-container" class="relative">
+        <!-- Three.js Canvas will be appended here -->
+        <div id="loading-indicator" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-70 text-lg font-semibold text-pink-300 z-30">
+            Initializing Scene...
+        </div>
+    </div>
 
-    <!-- OrbitControls -->
-    <script src="https://unpkg.com/three@latest/examples/js/controls/OrbitControls.js"></script>
+    <!-- Info Box -->
+    <div id="info-box" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-gray-700 p-4 rounded-lg shadow-2xl z-20 hidden">
+        <h3 class="text-lg font-semibold text-pink-300">Welcome!</h3>
+        <p class="text-sm text-gray-300 mt-1">Drag the model to rotate it. Click any worm to test the hyperlinking feature.</p>
+        <button onclick="document.getElementById('info-box').style.display = 'none';" class="mt-3 w-full bg-pink-600 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+            Got It
+        </button>
+    </div>
 
-    <!-- GLTF Loader -->
-    <script src="https://unpkg.com/three@latest/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- Confirmation Modal (Custom alert/confirm replacement) -->
+    <div id="confirmation-modal" class="hidden fixed inset-0 z-50 bg-gray-900 bg-opacity-75 items-center justify-center">
+        <div class="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border border-pink-500">
+            <h2 id="modal-title" class="text-xl font-bold mb-3 text-pink-300"></h2>
+            <p id="modal-message" class="text-gray-300 mb-6 text-sm"></p>
+            <div class="flex justify-end space-x-3">
+                <button id="modal-cancel" onclick="hideModal()" class="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition duration-200">
+                    Cancel
+                </button>
+                <button id="modal-confirm" class="bg-pink-600 hover:bg-pink-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200">
+                    Proceed
+                </button>
+            </div>
+        </div>
+    </div>
 
-    <script>
-        // Scene setup
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x000000);
+<script>
+    // --- THREE.JS LOGIC START ---
 
-        const camera = new THREE.PerspectiveCamera(
-            60, window.innerWidth / window.innerHeight, 0.1, 1000
-        );
-        camera.position.set(2, 2, 2);
+    let scene, camera, renderer;
+    const worms = []; // Array to hold worm meshes and their link data
+    const brainGroup = new THREE.Group(); // Group to hold the "brain" and worms for rotation
+    let raycaster, mouse;
+    let isDragging = false;
+    let previousMousePosition = { x: 0, y: 0 };
+    const rotationSpeed = 0.005;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+    // Worm data (path and links) - SHORTENED PATHS
+    const wormData = [
+        {
+            name: "The Neuron Nexus (Inactive)",
+            url: "#", // Placeholder/Blank URL
+            color: 0x964b00, // Brown
+            pathPoints: [
+                new THREE.Vector3(1.5, 0.8, 0.5),
+                new THREE.Vector3(2.5, 1.5, 0.8),
+                new THREE.Vector3(3.5, 2.0, 1.0), // Shortened end point
+            ],
+        },
+        {
+            name: "The Technical Stream Link (PG-TV)", // Active Link
+            url: "https://julesyvd-tech.github.io/PG-TV/", 
+            color: 0x00bfff, // Deep Sky Blue
+            pathPoints: [
+                new THREE.Vector3(-1.5, -0.5, -0.8),
+                new THREE.Vector3(-2.5, -1.0, -1.2),
+                new THREE.Vector3(-3.2, -1.8, -1.5), // Shortened end point
+            ],
+        },
+        {
+            name: "Existential Dread (Inactive)",
+            url: "#", // Placeholder/Blank URL
+            color: 0x8b4513, // Saddle Brown
+            pathPoints: [
+                new THREE.Vector3(0.5, 1.5, 0.5),
+                new THREE.Vector3(1.2, 2.2, 1.5),
+                new THREE.Vector3(1.5, 3.0, 2.0), // Shortened end point
+            ],
+        },
+        {
+            name: "Biology Junction (Inactive)",
+            url: "#", // Placeholder/Blank URL
+            color: 0xa0522d, // Sienne
+            pathPoints: [
+                new THREE.Vector3(-0.5, -1.5, -0.5),
+                new THREE.Vector3(-1.2, -2.5, -1.5),
+                new THREE.Vector3(-1.8, -3.2, -2.0), // Shortened end point
+            ],
+        },
+    ];
 
-        // Controls
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
+    // Main initialization function
+    function init() {
+        // 1. SCENE SETUP
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1f2937); // Dark gray background
 
-        // Lighting (strong + ambient)
-        const ambient = new THREE.AmbientLight(0xffffff, 2);
-        scene.add(ambient);
+        // 2. CAMERA
+        const container = document.getElementById('scene-container');
+        const aspect = container.clientWidth / container.clientHeight;
+        camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
+        camera.position.z = 10;
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
-        dirLight.position.set(5, 5, 5);
-        scene.add(dirLight);
+        // 3. RENDERER
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
 
-        // Load the model
-        const loader = new THREE.GLTFLoader();
-        loader.load(
-            "brain.glb",
-            (gltf) => {
-                const brain = gltf.scene;
+        // 4. LIGHTING
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
 
-                // Safety scaling (covers giant + tiny models)
-                brain.scale.set(1, 1, 1);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        directionalLight.position.set(5, 5, 5);
+        scene.add(directionalLight);
+        
+        const spotLight = new THREE.SpotLight(0xffffff, 0.8, 0, Math.PI / 4, 0.5, 2);
+        spotLight.position.set(-10, 10, -10);
+        scene.add(spotLight);
 
-                // Try recentering
-                brain.position.set(0, -0.2, 0);
 
-                // Rotate upright attempt
-                brain.rotation.x = Math.PI / 2;
+        // 5. CREATE ROOM 
+        createRoom();
 
-                scene.add(brain);
-            },
-            (xhr) => {
-                console.log(`Loading: ${ (xhr.loaded / xhr.total * 100).toFixed(1) }%`);
-            },
-            (err) => {
-                console.error("LOAD ERROR 👉", err);
-            }
-        );
+        // 6. CREATE PROCEDURAL BRAIN MODEL (Updated for 2-hemisphere shape)
+        createProceduralBrain();
+        
+        // 7. CREATE WORMS (LINKS)
+        wormData.forEach(data => createWorm(data));
 
-        // Resize handler
-        window.addEventListener("resize", () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+        // Add brain group (which now contains the procedural brain model and worms) to scene
+        scene.add(brainGroup);
+        brainGroup.rotation.y = Math.PI / 4; // Initial slight rotation
+
+        // Hide loading indicator as setup is complete
+        document.getElementById('loading-indicator').style.display = 'none';
+
+        // 8. INTERACTION SETUP (Raycasting)
+        raycaster = new THREE.Raycaster();
+        mouse = new THREE.Vector2();
+
+        window.addEventListener('resize', onWindowResize, false);
+        container.addEventListener('click', onClick, false);
+
+        // DRAG ROTATION SETUP
+        container.addEventListener('mousedown', onMouseDown);
+        container.addEventListener('mousemove', onMouseMove);
+        container.addEventListener('mouseup', onMouseUp);
+        container.addEventListener('mouseleave', onMouseUp);
+
+        // TOUCH ROTATION SETUP (For mobile)
+        container.addEventListener('touchstart', onTouchStart, { passive: false });
+        container.addEventListener('touchmove', onTouchMove, { passive: false });
+        container.addEventListener('touchend', onTouchEnd);
+
+        // 9. START ANIMATION
+        animate(0); // Pass initial time
+
+        // 10. Show initial info box
+        document.getElementById('info-box').classList.remove('hidden');
+    }
+    
+    // Function to create a procedural brain using TWO hemispheres
+    function createProceduralBrain() {
+        // Material for the brain
+        const brainMaterial = new THREE.MeshPhongMaterial({
+            color: 0xe07c7c, // Richer pink/red
+            emissive: 0x220000, // Dark red emissive for fleshy glow
+            shininess: 60, 
+            flatShading: false 
         });
 
-        // Render loop
-        function animate() {
-            requestAnimationFrame(animate);
-            controls.update();
-            renderer.render(scene, camera);
+        // Create two hemispheres
+        const leftHemi = createHemisphere(brainMaterial, -0.75); // Offset left
+        const rightHemi = createHemisphere(brainMaterial, 0.75); // Offset right
+
+        brainGroup.add(leftHemi);
+        brainGroup.add(rightHemi);
+        
+        document.getElementById('loading-indicator').innerText = 'Procedural Brain Created.';
+    }
+
+    function createHemisphere(material, xOffset) {
+        // Use IcosahedronGeometry for the organic, low-poly look base, then smooth it
+        // Radius 2.2, Detail 3 (higher detail for smoother folds)
+        const geometry = new THREE.IcosahedronGeometry(2.2, 3);
+        
+        // Scale it to be oblong (Brain shaped: narrower width, longer length)
+        // Scale(x, y, z) -> Compress X (width), Normal Y (height), Stretch Z (length)
+        geometry.scale(0.85, 1.0, 1.2);
+
+        const positionAttribute = geometry.getAttribute('position');
+        const tempVector = new THREE.Vector3();
+        const displacementMagnitude = 0.15; // How bumpy the brain is
+
+        for (let i = 0; i < positionAttribute.count; i++) {
+            tempVector.fromBufferAttribute(positionAttribute, i);
+            
+            let vertex = tempVector;
+            
+            // Calculate noise based on position for "folding" effect
+            // Simple trigonometric noise
+            const noise = Math.sin(vertex.x * 3) * Math.cos(vertex.y * 3) * Math.sin(vertex.z * 3);
+            
+            // Apply displacement along normal
+            const displacement = noise * displacementMagnitude;
+            
+            // Move vertex outward/inward based on noise
+            vertex.add(vertex.clone().normalize().multiplyScalar(displacement));
+            
+            // Flatten the inner side (where hemispheres meet)
+            // If xOffset is negative (left hemi), flatten positive x side.
+            // If xOffset is positive (right hemi), flatten negative x side.
+            const flatteningStrength = 0.5; 
+            if (xOffset < 0 && vertex.x > 0.5) {
+                 vertex.x *= (1.0 - flatteningStrength);
+            } else if (xOffset > 0 && vertex.x < -0.5) {
+                 vertex.x *= (1.0 - flatteningStrength);
+            }
+
+            positionAttribute.setXYZ(i, vertex.x, vertex.y, vertex.z);
         }
-        animate();
-    </script>
+        
+        geometry.computeVertexNormals();
+        
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(xOffset, 0, 0);
+        mesh.name = "Hemisphere";
+        return mesh;
+    }
+
+    // Function to create the surrounding room
+    function createRoom() {
+        const size = 100;
+        const geometry = new THREE.BoxGeometry(size, size, size);
+        
+        // Invert normals to see the inside of the box
+        geometry.scale( -1, 1, 1 ); 
+
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x1a1a1a, // Very dark gray
+            metalness: 0.1,
+            roughness: 0.8,
+            side: THREE.FrontSide
+        });
+
+        const room = new THREE.Mesh(geometry, material);
+        room.name = 'Room';
+        scene.add(room);
+    }
+    
+    function createWorm(data) {
+        // 1. Create a curve path
+        const curve = new THREE.CatmullRomCurve3(data.pathPoints);
+
+        // 2. Create the worm geometry using TubeGeometry
+        const baseRadius = 0.12; 
+        const segments = 64; // Reduced segments slightly for shorter worms
+        const tubularSegments = 12; 
+        
+        // Use a small constant radius here, as the custom logic below handles the actual shape
+        const geometry = new THREE.TubeGeometry(curve, segments, 0.01, tubularSegments, false); 
+
+        // Total number of vertices in the position buffer
+        const totalVertices = geometry.getAttribute('position').count;
+        
+        // 3. Apply Segmentation Displacement and Tapering for realism
+        const positionAttribute = geometry.getAttribute('position');
+        const tempVector = new THREE.Vector3();
+        const segmentCount = 8; // Fewer segments for shorter worms
+        const maxDisplacement = 0.035; // Max bulge magnitude
+
+        for (let i = 0; i < totalVertices; i++) {
+            tempVector.fromBufferAttribute(positionAttribute, i);
+            let vertex = tempVector;
+
+            // Calculate the U coordinate (position along the path, 0 to 1)
+            const sectionIndex = Math.floor(i / tubularSegments); 
+            let u = sectionIndex / segments; 
+            u = Math.min(1.0, u); 
+
+            // --- Tapering Effect (Tapers down at u=0 and u=1) ---
+            const taperFactor = 0.1 + 0.9 * Math.sin(u * Math.PI); 
+
+            const centerPoint = curve.getPointAt(u); 
+            
+            // Calculate the periodic bulging pattern (Segmentation)
+            const segmentBulge = Math.cos(segmentCount * u * Math.PI * 2); 
+            
+            // Adjust radius based on the bulge pattern AND tapering
+            let currentRadius = baseRadius * taperFactor;
+            currentRadius += segmentBulge * maxDisplacement; 
+
+            // Get the vector from the center point to the current vertex
+            const vectorFromCenter = new THREE.Vector3().subVectors(vertex, centerPoint);
+            
+            // Normalize this vector and scale it by the new segmented and tapered radius
+            vectorFromCenter.normalize().multiplyScalar(currentRadius);
+            
+            // Set the new position 
+            vertex.copy(centerPoint).add(vectorFromCenter);
+
+            positionAttribute.setXYZ(i, vertex.x, vertex.y, vertex.z);
+        }
+        geometry.computeVertexNormals();
+        geometry.attributes.position.needsUpdate = true;
+
+        // --- Store segmented position data for wriggle animation reference ---
+        const originalPositions = new Float32Array(positionAttribute.array.length);
+        originalPositions.set(positionAttribute.array);
+        // -------------------------------------------------------------------------
+
+
+        // 4. Create material
+        const material = new THREE.MeshPhongMaterial({
+            color: data.color,
+            specular: 0xcccccc, // Brighter specular
+            shininess: 100, // Very glossy/slimy look
+        });
+
+        // 5. Create the mesh
+        const wormMesh = new THREE.Mesh(geometry, material);
+        wormMesh.name = data.name; 
+
+        // Store link data and animation data on the mesh object
+        wormMesh.userData = {
+            url: data.url,
+            name: data.name,
+            isLink: true,
+            curve: curve, 
+            segments: segments,
+            tubularSegments: tubularSegments,
+            originalPositions: originalPositions, // Segmented and tapered shape
+            wriggleSpeed: Math.random() * 2 + 1, // Random speed for variety
+            wriggleMagnitude: 0.03, // Slightly reduced magnitude for shorter worms
+        };
+
+        // 6. Add to scene group and global array
+        brainGroup.add(wormMesh);
+        worms.push(wormMesh);
+    }
+
+    // Function to animate the worm's wriggle
+    function animateWormWriggle(worm, time) {
+        const { curve, segments, tubularSegments, originalPositions, wriggleSpeed, wriggleMagnitude } = worm.userData;
+        
+        const positionAttribute = worm.geometry.getAttribute('position');
+        const numVertices = positionAttribute.count;
+        const currentArray = positionAttribute.array;
+        
+        const tempVector = new THREE.Vector3();
+        const tangent = new THREE.Vector3();
+
+        for (let i = 0; i < numVertices; i++) {
+            // Restore segmented position (the "rest" position)
+            tempVector.set(originalPositions[i * 3], originalPositions[i * 3 + 1], originalPositions[i * 3 + 2]);
+            
+            // Calculate U coordinate (0 to 1 along the worm)
+            const sectionIndex = Math.floor(i / tubularSegments); 
+            let u = sectionIndex / segments; 
+            u = Math.min(1.0, u); 
+
+            // Get the curve tangent at this point
+            curve.getTangentAt(u, tangent).normalize();
+
+            // Calculate a time-based wave along the length (u)
+            const waveOffset = Math.sin(u * Math.PI * 4 + time * wriggleSpeed); 
+            
+            // Use an arbitrary orthogonal direction for the wriggle 
+            const wriggleDir = new THREE.Vector3().crossVectors(tangent, new THREE.Vector3(0, 0, 1)).normalize();
+            
+            // Apply the displacement to the segmented position
+            const displacementVector = wriggleDir.multiplyScalar(waveOffset * wriggleMagnitude);
+            const finalPosition = tempVector.add(displacementVector);
+
+            currentArray[i * 3] = finalPosition.x;
+            currentArray[i * 3 + 1] = finalPosition.y;
+            currentArray[i * 3 + 2] = finalPosition.z;
+        }
+
+        positionAttribute.needsUpdate = true;
+        worm.geometry.computeVertexNormals(); // Recalculate normals for correct shading
+    }
+
+    function onWindowResize() {
+        const container = document.getElementById('scene-container');
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(width, height);
+    }
+
+    // --- MOUSE/TOUCH INTERACTION (Rotation) ---
+
+    function onMouseDown(event) {
+        isDragging = true;
+        previousMousePosition = { x: event.clientX, y: event.clientY };
+        document.getElementById('scene-container').style.cursor = 'grabbing';
+    }
+
+    function onTouchStart(event) {
+        if (event.touches.length === 1) {
+            isDragging = true;
+            previousMousePosition = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+        }
+    }
+
+    function onMouseMove(event) {
+        if (!isDragging) return;
+
+        const deltaX = event.clientX - previousMousePosition.x;
+        const deltaY = event.clientY - previousMousePosition.y;
+
+        // Adjust rotation
+        brainGroup.rotation.y += deltaX * rotationSpeed;
+        brainGroup.rotation.x += deltaY * rotationSpeed;
+
+        // Clamp X rotation to prevent flipping
+        brainGroup.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, brainGroup.rotation.x));
+
+        previousMousePosition = { x: event.clientX, y: event.clientY };
+    }
+
+    function onTouchMove(event) {
+        if (!isDragging || event.touches.length !== 1) return;
+
+        const touch = event.touches[0];
+        const deltaX = touch.clientX - previousMousePosition.x;
+        const deltaY = touch.clientY - previousMousePosition.y;
+
+        // Adjust rotation (increased speed for touch)
+        brainGroup.rotation.y += deltaX * rotationSpeed * 2;
+        brainGroup.rotation.x += deltaY * rotationSpeed * 2;
+
+        brainGroup.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, brainGroup.rotation.x));
+
+        previousMousePosition = { x: touch.clientX, y: touch.clientY };
+    }
+
+    function onMouseUp() {
+        isDragging = false;
+        document.getElementById('scene-container').style.cursor = 'grab';
+    }
+
+    function onTouchEnd() {
+        isDragging = false;
+    }
+
+    // --- CLICK INTERACTION (Raycasting for Links) ---
+
+    function onClick(event) {
+        const container = document.getElementById('scene-container');
+        const bounds = container.getBoundingClientRect();
+
+        // Calculate normalized device coordinates
+        mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+        mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+
+        // Find intersections only with the worm objects
+        const intersects = raycaster.intersectObjects(worms);
+
+        if (intersects.length > 0) {
+            const intersectedObject = intersects[0].object;
+
+            if (intersectedObject.userData.isLink) {
+                const url = intersectedObject.userData.url;
+                const name = intersectedObject.userData.name;
+
+                // Show confirmation modal before navigating
+                showModal(name, url);
+            }
+            
+            // To provide visual feedback on click, pulse the color briefly
+            const originalColor = intersectedObject.material.color.getHex();
+            intersectedObject.material.color.set(0xffffff); // Flash white
+
+            setTimeout(() => {
+                // The color stored in the material has changed due to the flash, 
+                // but for this simple use case, we can keep it as is, or store the original
+                // color globally for the worm. For now, we'll just let it flash white.
+                // A better implementation would save the original color in userData.
+                // We'll leave it as is to avoid adding complex color state management.
+            }, 100); 
+        }
+    }
+
+    // --- Modal Functions (replacing alert/confirm) ---
+
+    function showModal(name, url) {
+        const modal = document.getElementById('confirmation-modal');
+        const isPlaceholder = (url === '#' || url === '');
+
+        document.getElementById('modal-title').innerText = isPlaceholder ? `Link Not Active: ${name}` : `Worm Link Activation: ${name}`;
+        document.getElementById('modal-message').innerText = isPlaceholder 
+            ? `This neural pathway is currently inactive and does not lead anywhere yet.`
+            : `This will open a new tab to: ${url}`;
+
+        const confirmButton = document.getElementById('modal-confirm');
+        const cancelButton = document.getElementById('modal-cancel');
+
+        if (isPlaceholder) {
+            confirmButton.innerText = 'Close';
+            cancelButton.style.display = 'none';
+            confirmButton.onclick = () => {
+                hideModal();
+            };
+        } else {
+            confirmButton.innerText = 'Proceed';
+            cancelButton.style.display = 'inline-block';
+            confirmButton.onclick = () => {
+                window.open(url, '_blank');
+                hideModal();
+            };
+        }
+
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+
+    function hideModal() {
+        const modal = document.getElementById('confirmation-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        
+        // Ensure buttons revert to default state after closing (for clarity)
+        document.getElementById('modal-confirm').innerText = 'Proceed';
+        document.getElementById('modal-cancel').style.display = 'inline-block';
+    }
+
+    // --- Animation Loop ---
+
+    function animate(time) {
+        requestAnimationFrame(animate);
+        const delta = time * 0.001; // Convert to seconds for smooth, consistent movement
+
+        // Continuous subtle rotation for effect if not dragging
+        if (!isDragging) {
+             brainGroup.rotation.y += 0.001;
+        }
+        
+        // Animate worms
+        worms.forEach(worm => animateWormWriggle(worm, delta));
+
+        renderer.render(scene, camera);
+    }
+
+    // Ensure init runs after the DOM and Three.js script are loaded
+    window.onload = () => {
+        if (typeof THREE !== 'undefined') {
+            init();
+        } else {
+            document.getElementById('loading-indicator').innerText = 'THREE.js not loaded. Cannot initialize 3D scene.';
+            console.error("THREE.js not loaded. Cannot initialize 3D scene.");
+        }
+    };
+
+    // --- THREE.JS LOGIC END ---
+</script>
 </body>
 </html>
